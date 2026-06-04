@@ -37,6 +37,7 @@ chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
 url = "2"
 uuid = { version = "1", features = ["v4"] }
+iota_stronghold = "2"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 russh = { version = "0.54", default-features = false, features = ["flate2", "rsa", "aws-lc-rs"] }

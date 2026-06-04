@@ -1,4 +1,5 @@
 use crate::error::{AppError, AppResult};
+use iota_stronghold::ClientError as InnerClientError;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
@@ -42,16 +43,23 @@ impl SecretsStore {
         let stronghold = TauriStronghold::new(&vault_path, password)
             .map_err(|e| AppError::Stronghold(format!("open: {e}")))?;
 
+        // `Stronghold::new` already called `load_snapshot` if the file exists.
+        // After that, the snapshot data is in memory but the client HashMap is
+        // empty. We must use `load_client` to bring the persisted client into
+        // the HashMap (errors with `ClientDataNotPresent` on first run, when
+        // there is no client in the snapshot yet).
         let ensure_result: Result<(), String> = (|| {
             let inner = stronghold.inner();
             match inner.load_client(CLIENT_PATH) {
                 Ok(_) => Ok(()),
-                Err(_) => {
+                Err(InnerClientError::ClientDataNotPresent) => {
                     inner
                         .create_client(CLIENT_PATH)
                         .map_err(|e| format!("create client: {e}"))?;
                     Ok(())
                 }
+                Err(InnerClientError::ClientAlreadyLoaded(_)) => Ok(()),
+                Err(e) => Err(format!("load client: {e}")),
             }
         })();
         ensure_result.map_err(AppError::Stronghold)?;
@@ -77,10 +85,13 @@ impl SecretsStore {
             let sh = guard
                 .as_ref()
                 .ok_or_else(|| AppError::Stronghold("vault locked".into()))?;
+            // Use `get_client` here: the client is already in the HashMap from
+            // `unlock()`. Calling `load_client` would error with
+            // `ClientAlreadyLoaded`.
             let client = sh
                 .inner()
-                .load_client(CLIENT_PATH)
-                .map_err(|e| AppError::Stronghold(format!("load client: {e}")))?;
+                .get_client(CLIENT_PATH)
+                .map_err(|e| AppError::Stronghold(format!("get client: {e}")))?;
             let store = client.store();
             store
                 .insert(key.into_bytes(), value.into_bytes(), None)
@@ -105,8 +116,8 @@ impl SecretsStore {
                     .ok_or_else(|| AppError::Stronghold("vault locked".into()))?;
                 let client = sh
                     .inner()
-                    .load_client(CLIENT_PATH)
-                    .map_err(|e| AppError::Stronghold(format!("load client: {e}")))?;
+                    .get_client(CLIENT_PATH)
+                    .map_err(|e| AppError::Stronghold(format!("get client: {e}")))?;
                 let store = client.store();
                 let bytes = store
                     .get(&key.into_bytes())
@@ -128,8 +139,8 @@ impl SecretsStore {
                 .ok_or_else(|| AppError::Stronghold("vault locked".into()))?;
             let client = sh
                 .inner()
-                .load_client(CLIENT_PATH)
-                .map_err(|e| AppError::Stronghold(format!("load client: {e}")))?;
+                .get_client(CLIENT_PATH)
+                .map_err(|e| AppError::Stronghold(format!("get client: {e}")))?;
             let store = client.store();
             let _ = store.delete(&key.into_bytes());
             let _ = sh.save();
