@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Outlet, NavLink, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { LayoutDashboard, ServerCog, Globe, Github, Terminal as TerminalIcon, Settings as SettingsIcon, Sun, Moon, Monitor } from "lucide-react";
 import { useStore } from "./state/useStore";
 import { useTheme } from "./state/useTheme";
+import Terminal from "./routes/Terminal";
 
 const tabs = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -12,11 +13,43 @@ const tabs = [
   { to: "/terminal", label: "Terminal", icon: TerminalIcon },
 ];
 
+type Theme = "system" | "light" | "dark";
+
+function ThemeToggleButton({
+  theme,
+  onCycle,
+  size = 16,
+}: {
+  theme: Theme;
+  onCycle: () => void;
+  size?: number;
+}) {
+  const Icon = theme === "system" ? Monitor : theme === "light" ? Sun : Moon;
+  const title =
+    theme === "system"
+      ? "System — klicken für Hell"
+      : theme === "light"
+        ? "Hell — klicken für Dunkel"
+        : "Dunkel — klicken für System";
+  return (
+    <button
+      onClick={onCycle}
+      title={title}
+      aria-label={title}
+      className="flex items-center justify-center p-1.5 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)] transition"
+    >
+      <Icon size={size} />
+    </button>
+  );
+}
+
 export default function App() {
   const ready = useStore((s) => s.ready);
   const load = useStore((s) => s.load);
-  const [theme, setTheme] = useTheme();
+  const [theme, , , cycleTheme] = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isTerminal = location.pathname.startsWith("/terminal");
   const [readyTimer, setReadyTimer] = useState(0);
 
   useEffect(() => {
@@ -61,15 +94,15 @@ export default function App() {
             {t.label}
           </NavLink>
         ))}
-        <div className="mt-auto">
+        <div className="mt-auto flex items-center gap-1 px-2">
           <button
             onClick={() => navigate("/settings")}
-            className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)] transition"
+            className="flex-1 flex items-center gap-2 px-2 py-2 rounded-lg text-sm text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)] transition"
           >
             <SettingsIcon size={16} />
             Settings
           </button>
-          <ThemeToggle theme={theme} setTheme={setTheme} />
+          <ThemeToggleButton theme={theme} onCycle={cycleTheme} />
         </div>
       </aside>
 
@@ -100,54 +133,25 @@ export default function App() {
             >
               <SettingsIcon size={16} />
             </button>
-            <ThemeToggle theme={theme} setTheme={setTheme} compact />
+            <ThemeToggleButton theme={theme} onCycle={cycleTheme} />
           </div>
         </div>
-        <div className="flex-1 min-h-0 overflow-hidden">
-          <Outlet />
+        <div className="flex-1 min-h-0 overflow-hidden relative">
+          <div
+            className="absolute inset-0"
+            style={{ display: isTerminal ? "none" : "block" }}
+          >
+            <Outlet />
+          </div>
+          <div
+            className="absolute inset-0"
+            style={{ display: isTerminal ? "block" : "none" }}
+            aria-hidden={!isTerminal}
+          >
+            <Terminal />
+          </div>
         </div>
       </main>
-    </div>
-  );
-}
-
-function ThemeToggle({
-  theme,
-  setTheme,
-  compact,
-}: {
-  theme: "system" | "light" | "dark";
-  setTheme: (t: "system" | "light" | "dark") => void;
-  compact?: boolean;
-}) {
-  const options: Array<{ value: "system" | "light" | "dark"; icon: any; label: string }> = [
-    { value: "system", icon: Monitor, label: "System" },
-    { value: "light", icon: Sun, label: "Hell" },
-    { value: "dark", icon: Moon, label: "Dunkel" },
-  ];
-  return (
-    <div
-      className={`flex gap-1 ${compact ? "" : "mt-2 px-3 py-1.5"}`}
-    >
-      {options.map((o) => {
-        const Icon = o.icon;
-        const active = theme === o.value;
-        return (
-          <button
-            key={o.value}
-            onClick={() => setTheme(o.value)}
-            title={o.label}
-            className={`flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs transition ${
-              active
-                ? "bg-[var(--bg-elevated)] text-[var(--text)]"
-                : "text-[var(--text-muted)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text)]"
-            }`}
-          >
-            <Icon size={14} />
-            {!compact && o.label}
-          </button>
-        );
-      })}
     </div>
   );
 }

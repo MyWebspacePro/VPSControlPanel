@@ -195,6 +195,15 @@ async fn test_ssh_connection<R: Runtime>(
 }
 
 #[tauri::command]
+async fn test_ssh_connection_with_profile<R: Runtime>(
+    app: AppHandle<R>,
+    profile: crate::state::SshProfile,
+) -> AppResult<String> {
+    let output = ssh::exec_command(&app, profile, "echo ok-from-vps", 5).await?;
+    Ok(output)
+}
+
+#[tauri::command]
 async fn get_dashboard_data<R: Runtime>(app: AppHandle<R>) -> AppResult<DashboardData> {
     let state = app.state::<AppState>();
     let profiles = state.profiles.read().await.clone();
@@ -399,6 +408,154 @@ async fn coolify_deploy<R: Runtime>(
     client.deploy_application(&uuid, tag.as_deref()).await
 }
 
+#[tauri::command]
+async fn coolify_start<R: Runtime>(app: AppHandle<R>, uuid: String) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.start_application(&uuid).await
+}
+
+#[tauri::command]
+async fn coolify_stop<R: Runtime>(app: AppHandle<R>, uuid: String) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.stop_application(&uuid).await
+}
+
+#[tauri::command]
+async fn coolify_restart<R: Runtime>(app: AppHandle<R>, uuid: String) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.restart_application(&uuid).await
+}
+
+#[tauri::command]
+async fn coolify_service_start<R: Runtime>(app: AppHandle<R>, uuid: String) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.start_service(&uuid).await
+}
+
+#[tauri::command]
+async fn coolify_service_stop<R: Runtime>(app: AppHandle<R>, uuid: String) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.stop_service(&uuid).await
+}
+
+#[tauri::command]
+async fn coolify_service_restart<R: Runtime>(app: AppHandle<R>, uuid: String) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.restart_service(&uuid).await
+}
+
+#[tauri::command]
+async fn coolify_projects<R: Runtime>(app: AppHandle<R>) -> AppResult<Vec<serde_json::Value>> {
+    let client = coolify_client(&app).await?;
+    client.projects().await
+}
+
+#[tauri::command]
+async fn coolify_project_environments<R: Runtime>(
+    app: AppHandle<R>,
+    project_uuid: String,
+) -> AppResult<Vec<serde_json::Value>> {
+    let client = coolify_client(&app).await?;
+    client.project_environments(&project_uuid).await
+}
+
+#[tauri::command]
+async fn coolify_create_application<R: Runtime>(
+    app: AppHandle<R>,
+    body: serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    let client = coolify_client(&app).await?;
+    client.create_application_public(body).await
+}
+
+#[tauri::command]
+async fn coolify_delete_application<R: Runtime>(
+    app: AppHandle<R>,
+    uuid: String,
+    delete_volumes: bool,
+) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.delete_application(&uuid, delete_volumes).await
+}
+
+#[tauri::command]
+async fn coolify_add_env<R: Runtime>(
+    app: AppHandle<R>,
+    uuid: String,
+    key: String,
+    value: String,
+    is_literal: bool,
+    is_multiline: bool,
+    is_shown_once: bool,
+) -> AppResult<serde_json::Value> {
+    let client = coolify_client(&app).await?;
+    client
+        .add_application_env(&uuid, &key, &value, is_literal, is_multiline, is_shown_once)
+        .await
+}
+
+#[tauri::command]
+async fn coolify_update_env<R: Runtime>(
+    app: AppHandle<R>,
+    uuid: String,
+    key: String,
+    value: String,
+    is_literal: bool,
+    is_multiline: bool,
+    is_shown_once: bool,
+) -> AppResult<serde_json::Value> {
+    let client = coolify_client(&app).await?;
+    client
+        .update_application_env(&uuid, &key, &value, is_literal, is_multiline, is_shown_once)
+        .await
+}
+
+#[tauri::command]
+async fn coolify_delete_env<R: Runtime>(
+    app: AppHandle<R>,
+    uuid: String,
+    env_uuid: String,
+) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.delete_application_env(&uuid, &env_uuid).await
+}
+
+#[tauri::command]
+async fn coolify_create_postgres<R: Runtime>(
+    app: AppHandle<R>,
+    body: serde_json::Value,
+) -> AppResult<serde_json::Value> {
+    let client = coolify_client(&app).await?;
+    client.create_postgres(body).await
+}
+
+#[tauri::command]
+async fn coolify_delete_database<R: Runtime>(
+    app: AppHandle<R>,
+    uuid: String,
+) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.delete_database(&uuid).await
+}
+
+#[tauri::command]
+async fn coolify_database_start<R: Runtime>(app: AppHandle<R>, uuid: String) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.start_database(&uuid).await
+}
+
+#[tauri::command]
+async fn coolify_database_stop<R: Runtime>(app: AppHandle<R>, uuid: String) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.stop_database(&uuid).await
+}
+
+#[tauri::command]
+async fn coolify_database_restart<R: Runtime>(app: AppHandle<R>, uuid: String) -> AppResult<String> {
+    let client = coolify_client(&app).await?;
+    client.restart_database(&uuid).await
+}
+
 async fn coolify_client<R: Runtime>(app: &AppHandle<R>) -> AppResult<coolify::CoolifyClient> {
     let state = app.state::<AppState>();
     let p = state.profiles.read().await;
@@ -434,10 +591,11 @@ async fn hestia_add_dns<R: Runtime>(
     rtype: String,
     value: String,
     priority: Option<u16>,
+    ttl: Option<u32>,
 ) -> AppResult<String> {
     let client = hestia_client(&app).await?;
     client
-        .add_dns_record(&domain, &record, &rtype, &value, priority)
+        .add_dns_record(&domain, &record, &rtype, &value, priority, ttl)
         .await
 }
 
@@ -446,11 +604,9 @@ async fn hestia_delete_dns<R: Runtime>(
     app: AppHandle<R>,
     domain: String,
     record: String,
-    rtype: String,
-    value: String,
 ) -> AppResult<String> {
     let client = hestia_client(&app).await?;
-    client.delete_dns_record(&domain, &record, &rtype, &value).await
+    client.delete_dns_record(&domain, &record).await
 }
 
 #[tauri::command]
@@ -468,6 +624,150 @@ async fn hestia_databases<R: Runtime>(
 ) -> AppResult<Vec<hestia::HestiaDatabase>> {
     let client = hestia_client(&app).await?;
     client.list_databases().await
+}
+
+#[tauri::command]
+async fn hestia_add_web_domain<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+    ip: Option<String>,
+    aliases: Option<String>,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client
+        .add_web_domain(&domain, ip.as_deref(), aliases.as_deref())
+        .await
+}
+
+#[tauri::command]
+async fn hestia_delete_web_domain<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client.delete_web_domain(&domain).await
+}
+
+#[tauri::command]
+async fn hestia_suspend_web_domain<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client.suspend_web_domain(&domain).await
+}
+
+#[tauri::command]
+async fn hestia_unsuspend_web_domain<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client.unsuspend_web_domain(&domain).await
+}
+
+#[tauri::command]
+async fn hestia_add_letsencrypt<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client.add_letsencrypt(&domain).await
+}
+
+#[tauri::command]
+async fn hestia_delete_letsencrypt<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client.delete_letsencrypt(&domain).await
+}
+
+#[tauri::command]
+async fn hestia_mail_domains<R: Runtime>(
+    app: AppHandle<R>,
+) -> AppResult<Vec<hestia::MailDomain>> {
+    let client = hestia_client(&app).await?;
+    client.list_mail_domains().await
+}
+
+#[tauri::command]
+async fn hestia_add_mail_domain<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client.add_mail_domain(&domain).await
+}
+
+#[tauri::command]
+async fn hestia_delete_mail_domain<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client.delete_mail_domain(&domain).await
+}
+
+#[tauri::command]
+async fn hestia_add_mail_account<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+    account: String,
+    password: String,
+    quota_mb: Option<u32>,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client
+        .add_mail_account(&domain, &account, &password, quota_mb)
+        .await
+}
+
+#[tauri::command]
+async fn hestia_delete_mail_account<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+    account: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client.delete_mail_account(&domain, &account).await
+}
+
+#[tauri::command]
+async fn hestia_change_mail_account_password<R: Runtime>(
+    app: AppHandle<R>,
+    domain: String,
+    account: String,
+    new_password: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client
+        .change_mail_account_password(&domain, &account, &new_password)
+        .await
+}
+
+#[tauri::command]
+async fn hestia_add_database<R: Runtime>(
+    app: AppHandle<R>,
+    database: String,
+    dbuser: String,
+    dbpass: String,
+    dbtype: Option<String>,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client
+        .add_database(&database, &dbuser, &dbpass, dbtype.as_deref())
+        .await
+}
+
+#[tauri::command]
+async fn hestia_delete_database<R: Runtime>(
+    app: AppHandle<R>,
+    database: String,
+) -> AppResult<String> {
+    let client = hestia_client(&app).await?;
+    client.delete_database(&database).await
 }
 
 async fn hestia_client<R: Runtime>(app: &AppHandle<R>) -> AppResult<hestia::HestiaClient> {
@@ -620,6 +920,53 @@ async fn gh_issue_comments<R: Runtime>(
 async fn gh_repos<R: Runtime>(app: AppHandle<R>) -> AppResult<Vec<github::Repo>> {
     let client = gh_client(&app).await?;
     client.repos().await
+}
+
+#[tauri::command]
+async fn gh_create_repo<R: Runtime>(
+    app: AppHandle<R>,
+    name: String,
+    description: Option<String>,
+    private: bool,
+    auto_init: bool,
+) -> AppResult<github::Repo> {
+    let client = gh_client(&app).await?;
+    client
+        .create_repo(&name, description.as_deref(), private, auto_init)
+        .await
+}
+
+#[tauri::command]
+async fn gh_delete_repo<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+) -> AppResult<String> {
+    let client = gh_client(&app).await?;
+    client.delete_repo(&owner, &repo).await
+}
+
+#[tauri::command]
+async fn gh_update_repo<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    description: Option<String>,
+    private: Option<bool>,
+    default_branch: Option<String>,
+    archived: Option<bool>,
+) -> AppResult<github::Repo> {
+    let client = gh_client(&app).await?;
+    client
+        .update_repo(
+            &owner,
+            &repo,
+            description.as_deref(),
+            private,
+            default_branch.as_deref(),
+            archived,
+        )
+        .await
 }
 
 #[tauri::command]
@@ -781,6 +1128,7 @@ pub fn run() {
             test_hestia_connection,
             test_github_connection,
             test_ssh_connection,
+            test_ssh_connection_with_profile,
             get_dashboard_data,
             coolify_servers,
             coolify_applications,
@@ -790,12 +1138,44 @@ pub fn run() {
             coolify_application_envs,
             coolify_application_logs,
             coolify_deploy,
+            coolify_start,
+            coolify_stop,
+            coolify_restart,
+            coolify_service_start,
+            coolify_service_stop,
+            coolify_service_restart,
+            coolify_projects,
+            coolify_project_environments,
+            coolify_create_application,
+            coolify_delete_application,
+            coolify_add_env,
+            coolify_update_env,
+            coolify_delete_env,
+            coolify_create_postgres,
+            coolify_delete_database,
+            coolify_database_start,
+            coolify_database_stop,
+            coolify_database_restart,
             hestia_web_domains,
             hestia_dns_records,
             hestia_add_dns,
             hestia_delete_dns,
             hestia_mail_accounts,
             hestia_databases,
+            hestia_add_web_domain,
+            hestia_delete_web_domain,
+            hestia_suspend_web_domain,
+            hestia_unsuspend_web_domain,
+            hestia_add_letsencrypt,
+            hestia_delete_letsencrypt,
+            hestia_mail_domains,
+            hestia_add_mail_domain,
+            hestia_delete_mail_domain,
+            hestia_add_mail_account,
+            hestia_delete_mail_account,
+            hestia_change_mail_account_password,
+            hestia_add_database,
+            hestia_delete_database,
             gh_current_user,
             gh_notifications,
             gh_mark_notification_read,
@@ -813,6 +1193,9 @@ pub fn run() {
             gh_repos,
             gh_repo_tree,
             gh_file_content,
+            gh_create_repo,
+            gh_delete_repo,
+            gh_update_repo,
             ssh_open,
             ssh_write,
             ssh_resize,

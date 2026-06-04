@@ -8,6 +8,13 @@ import {
   GitPullRequest,
   CircleDot,
   Box,
+  Plus,
+  Trash2,
+  X,
+  Save,
+  Loader2,
+  Edit3,
+  RefreshCw,
 } from "lucide-react";
 
 type Tab = "inbox" | "issues" | "notifications" | "repos";
@@ -20,8 +27,16 @@ export default function GitHub() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [repos, setRepos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [showCreateRepo, setShowCreateRepo] = useState(false);
+  const [editingRepo, setEditingRepo] = useState<any | null>(null);
+  const [newRepo, setNewRepo] = useState({
+    name: "",
+    description: "",
+    isPrivate: false,
+    autoInit: true,
+  });
 
-  useEffect(() => {
+  const load = async () => {
     if (!profile) return;
     setLoading(true);
     Promise.all([
@@ -37,6 +52,10 @@ export default function GitHub() {
         setRepos(r as any[]);
       })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    load();
   }, [profile]);
 
   if (!profile) {
@@ -62,9 +81,79 @@ export default function GitHub() {
     );
   }
 
+  const createRepo = async () => {
+    if (!newRepo.name) return;
+    try {
+      await api.ghCreateRepo(
+        newRepo.name,
+        newRepo.description || null,
+        newRepo.isPrivate,
+        newRepo.autoInit,
+      );
+      setNewRepo({ name: "", description: "", isPrivate: false, autoInit: true });
+      setShowCreateRepo(false);
+      const r = (await api.ghRepos()) as any[];
+      setRepos(r);
+    } catch (e) {
+      alert(String(e));
+    }
+  };
+
+  const deleteRepo = async (r: any) => {
+    if (
+      !confirm(
+        `Repo "${r.full_name}" wirklich löschen? Tippe OK zum Bestätigen.`,
+      )
+    )
+      return;
+    try {
+      await api.ghDeleteRepo(r.owner.login, r.name);
+      const list = (await api.ghRepos()) as any[];
+      setRepos(list);
+    } catch (e) {
+      alert(String(e));
+    }
+  };
+
+  const updateRepo = async () => {
+    if (!editingRepo) return;
+    try {
+      await api.ghUpdateRepo(
+        editingRepo.owner.login,
+        editingRepo.name,
+        editingRepo.description ?? null,
+        editingRepo.private,
+        null,
+        null,
+      );
+      setEditingRepo(null);
+      const list = (await api.ghRepos()) as any[];
+      setRepos(list);
+    } catch (e) {
+      alert(String(e));
+    }
+  };
+
   return (
     <div className="h-full overflow-auto p-4 md:p-6 space-y-4">
-      <h1 className="text-xl font-semibold">GitHub</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">GitHub</h1>
+        <div className="flex gap-2">
+          <button className="btn" onClick={load} disabled={loading}>
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+            Aktualisieren
+          </button>
+          {tab === "repos" && (
+            <button
+              className="btn btn-primary"
+              onClick={() => setShowCreateRepo(true)}
+            >
+              <Plus size={14} />
+              Neues Repo
+            </button>
+          )}
+        </div>
+      </div>
       <div className="flex gap-1 border-b border-[var(--border)]">
         {([
           { key: "inbox", label: "PR-Inbox", icon: GitPullRequest, count: prs.length },
@@ -95,7 +184,9 @@ export default function GitHub() {
         ))}
       </div>
       {loading ? (
-        <div className="text-sm text-[var(--text-muted)]">Lade …</div>
+        <div className="text-sm text-[var(--text-muted)] flex items-center gap-2">
+          <Loader2 size={14} className="animate-spin" /> Lade …
+        </div>
       ) : tab === "inbox" ? (
         <PrList prs={prs} />
       ) : tab === "issues" ? (
@@ -107,7 +198,9 @@ export default function GitHub() {
             try {
               await api.ghMarkNotificationRead(id);
               setNotifications(
-                notifications.map((n) => (n.id === id ? { ...n, unread: false } : n)),
+                notifications.map((n) =>
+                  n.id === id ? { ...n, unread: false } : n,
+                ),
               );
             } catch (e) {
               alert(String(e));
@@ -115,15 +208,195 @@ export default function GitHub() {
           }}
         />
       ) : (
-        <RepoList repos={repos} />
+        <RepoList
+          repos={repos}
+          onDelete={deleteRepo}
+          onEdit={(r) => setEditingRepo(r)}
+        />
       )}
+
+      {showCreateRepo && (
+        <CreateRepoModal
+          value={newRepo}
+          onChange={setNewRepo}
+          onClose={() => setShowCreateRepo(false)}
+          onSubmit={createRepo}
+        />
+      )}
+      {editingRepo && (
+        <EditRepoModal
+          repo={editingRepo}
+          onChange={setEditingRepo}
+          onClose={() => setEditingRepo(null)}
+          onSubmit={updateRepo}
+        />
+      )}
+    </div>
+  );
+}
+
+function CreateRepoModal({
+  value,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  value: { name: string; description: string; isPrivate: boolean; autoInit: boolean };
+  onChange: (v: typeof value) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <ModalShell title="Neues Repository" onClose={onClose}>
+      <div className="space-y-3">
+        <div>
+          <label className="label">Name *</label>
+          <input
+            className="input"
+            value={value.name}
+            onChange={(e) => onChange({ ...value, name: e.target.value })}
+            placeholder="mein-projekt"
+          />
+        </div>
+        <div>
+          <label className="label">Beschreibung (optional)</label>
+          <textarea
+            className="input min-h-[60px]"
+            value={value.description}
+            onChange={(e) => onChange({ ...value, description: e.target.value })}
+            placeholder="Kurze Beschreibung"
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={value.isPrivate}
+            onChange={(e) => onChange({ ...value, isPrivate: e.target.checked })}
+          />
+          Privat (nur du siehst es)
+        </label>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={value.autoInit}
+            onChange={(e) => onChange({ ...value, autoInit: e.target.checked })}
+          />
+          Mit README initialisieren
+        </label>
+      </div>
+      <ModalFooter
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitLabel="Erstellen"
+        submitDisabled={!value.name}
+      />
+    </ModalShell>
+  );
+}
+
+function EditRepoModal({
+  repo,
+  onChange,
+  onClose,
+  onSubmit,
+}: {
+  repo: any;
+  onChange: (r: any) => void;
+  onClose: () => void;
+  onSubmit: () => void;
+}) {
+  return (
+    <ModalShell title={`Bearbeite ${repo.full_name}`} onClose={onClose}>
+      <div className="space-y-3">
+        <div>
+          <label className="label">Beschreibung</label>
+          <textarea
+            className="input min-h-[80px]"
+            value={repo.description || ""}
+            onChange={(e) => onChange({ ...repo, description: e.target.value })}
+          />
+        </div>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!repo.private}
+            onChange={(e) => onChange({ ...repo, private: e.target.checked })}
+          />
+          Privat
+        </label>
+      </div>
+      <ModalFooter
+        onClose={onClose}
+        onSubmit={onSubmit}
+        submitLabel="Speichern"
+      />
+    </ModalShell>
+  );
+}
+
+function ModalShell({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-[var(--bg-elevated)] rounded-lg max-w-lg w-full max-h-[90vh] overflow-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+          <h2 className="font-semibold">{title}</h2>
+          <button onClick={onClose} className="btn">
+            <X size={14} />
+          </button>
+        </div>
+        <div className="p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function ModalFooter({
+  onClose,
+  onSubmit,
+  submitLabel,
+  submitDisabled,
+}: {
+  onClose: () => void;
+  onSubmit: () => void;
+  submitLabel: string;
+  submitDisabled?: boolean;
+}) {
+  return (
+    <div className="flex gap-2 pt-3 mt-3 border-t border-[var(--border)]">
+      <button className="btn" onClick={onClose}>
+        Abbrechen
+      </button>
+      <button
+        className="btn btn-primary ml-auto"
+        onClick={onSubmit}
+        disabled={submitDisabled}
+      >
+        <Save size={14} />
+        {submitLabel}
+      </button>
     </div>
   );
 }
 
 function PrList({ prs }: { prs: any[] }) {
   if (prs.length === 0)
-    return <div className="text-sm text-[var(--text-muted)]">Keine offenen PRs.</div>;
+    return (
+      <div className="text-sm text-[var(--text-muted)]">Keine offenen PRs.</div>
+    );
   return (
     <div className="space-y-2">
       {prs.map((p) => (
@@ -148,7 +421,9 @@ function PrList({ prs }: { prs: any[] }) {
 
 function IssueList({ issues }: { issues: any[] }) {
   if (issues.length === 0)
-    return <div className="text-sm text-[var(--text-muted)]">Keine zugewiesenen Issues.</div>;
+    return (
+      <div className="text-sm text-[var(--text-muted)]">Keine zugewiesenen Issues.</div>
+    );
   return (
     <div className="space-y-2">
       {issues.map((i) => {
@@ -184,7 +459,9 @@ function NotificationList({
   onMarkRead: (id: string) => void;
 }) {
   if (notifications.length === 0)
-    return <div className="text-sm text-[var(--text-muted)]">Keine Benachrichtigungen.</div>;
+    return (
+      <div className="text-sm text-[var(--text-muted)]">Keine Benachrichtigungen.</div>
+    );
   return (
     <div className="space-y-2">
       {notifications.map((n) => (
@@ -195,7 +472,9 @@ function NotificationList({
         >
           <Bell
             size={16}
-            className={`mt-1 ${n.unread ? "text-[var(--accent)]" : "text-[var(--text-muted)]"}`}
+            className={`mt-1 ${
+              n.unread ? "text-[var(--accent)]" : "text-[var(--text-muted)]"
+            }`}
           />
           <div className="flex-1 min-w-0">
             <div className="font-medium truncate">{n.subject?.title}</div>
@@ -217,31 +496,58 @@ function NotificationList({
   );
 }
 
-function RepoList({ repos }: { repos: any[] }) {
+function RepoList({
+  repos,
+  onDelete,
+  onEdit,
+}: {
+  repos: any[];
+  onDelete: (r: any) => void;
+  onEdit: (r: any) => void;
+}) {
   if (repos.length === 0)
-    return <div className="text-sm text-[var(--text-muted)]">Keine Repos gefunden.</div>;
+    return <div className="text-sm text-[var(--text-muted)]">Keine Repos.</div>;
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       {repos.map((r) => (
-        <Link
+        <div
           key={r.id}
-          to={`/github/repos/${r.owner?.login || r.full_name.split("/")[0]}/${r.name}`}
-          className="card hover:border-[var(--accent)] transition"
+          className="card flex flex-col gap-2"
         >
           <div className="flex items-center justify-between">
-            <div className="font-medium truncate">{r.full_name}</div>
+            <Link
+              to={`/github/repos/${r.owner?.login || r.full_name.split("/")[0]}/${r.name}`}
+              className="font-medium truncate hover:text-[var(--accent)]"
+            >
+              {r.full_name}
+            </Link>
             {r.private && <span className="badge badge-muted">privat</span>}
           </div>
           {r.description && (
-            <div className="text-xs text-[var(--text-muted)] mt-1 line-clamp-2">
+            <div className="text-xs text-[var(--text-muted)] line-clamp-2">
               {r.description}
             </div>
           )}
-          <div className="text-[11px] text-[var(--text-muted)] mt-2 flex gap-3">
+          <div className="text-[11px] text-[var(--text-muted)] flex gap-3">
             {r.language && <span>{r.language}</span>}
             {r.stargazers_count != null && <span>★ {r.stargazers_count}</span>}
           </div>
-        </Link>
+          <div className="flex gap-1 pt-2 border-t border-[var(--border)]">
+            <button
+              className="btn text-xs flex-1"
+              onClick={() => onEdit(r)}
+            >
+              <Edit3 size={12} />
+              Bearbeiten
+            </button>
+            <button
+              className="btn text-xs text-[var(--danger)]"
+              onClick={() => onDelete(r)}
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        </div>
       ))}
     </div>
   );

@@ -121,6 +121,8 @@ export const api = {
   testGithub: () => invoke<unknown>("test_github_connection"),
   testSsh: (profileId: string) =>
     invoke<string>("test_ssh_connection", { profileId }),
+  testSshWithProfile: (profile: SshProfile) =>
+    invoke<string>("test_ssh_connection_with_profile", { profile }),
 
   getDashboard: () => invoke<DashboardData>("get_dashboard_data"),
 
@@ -136,6 +138,69 @@ export const api = {
     invoke<string>("coolify_application_logs", { uuid, lines }),
   coolifyDeploy: (uuid: string, tag: string | null) =>
     invoke<void>("coolify_deploy", { uuid, tag }),
+  coolifyStart: (uuid: string) => invoke<string>("coolify_start", { uuid }),
+  coolifyStop: (uuid: string) => invoke<string>("coolify_stop", { uuid }),
+  coolifyRestart: (uuid: string) => invoke<string>("coolify_restart", { uuid }),
+  coolifyProjects: () => invoke<unknown[]>("coolify_projects"),
+  coolifyProjectEnvironments: (projectUuid: string) =>
+    invoke<unknown[]>("coolify_project_environments", { projectUuid }),
+  coolifyCreateApplication: (body: unknown) =>
+    invoke<unknown>("coolify_create_application", { body }),
+  coolifyDeleteApplication: (uuid: string, deleteVolumes: boolean) =>
+    invoke<string>("coolify_delete_application", {
+      uuid,
+      deleteVolumes,
+    }),
+  coolifyAddEnv: (
+    uuid: string,
+    key: string,
+    value: string,
+    isLiteral: boolean,
+    isMultiline: boolean,
+    isShownOnce: boolean,
+  ) =>
+    invoke<unknown>("coolify_add_env", {
+      uuid,
+      key,
+      value,
+      isLiteral,
+      isMultiline,
+      isShownOnce,
+    }),
+  coolifyUpdateEnv: (
+    uuid: string,
+    key: string,
+    value: string,
+    isLiteral: boolean,
+    isMultiline: boolean,
+    isShownOnce: boolean,
+  ) =>
+    invoke<unknown>("coolify_update_env", {
+      uuid,
+      key,
+      value,
+      isLiteral,
+      isMultiline,
+      isShownOnce,
+    }),
+  coolifyDeleteEnv: (uuid: string, envUuid: string) =>
+    invoke<string>("coolify_delete_env", { uuid, envUuid }),
+  coolifyCreatePostgres: (body: unknown) =>
+    invoke<unknown>("coolify_create_postgres", { body }),
+  coolifyDeleteDatabase: (uuid: string) =>
+    invoke<string>("coolify_delete_database", { uuid }),
+  coolifyDatabaseStart: (uuid: string) =>
+    invoke<string>("coolify_database_start", { uuid }),
+  coolifyDatabaseStop: (uuid: string) =>
+    invoke<string>("coolify_database_stop", { uuid }),
+  coolifyDatabaseRestart: (uuid: string) =>
+    invoke<string>("coolify_database_restart", { uuid }),
+  coolifyServiceStart: (uuid: string) =>
+    invoke<string>("coolify_service_start", { uuid }),
+  coolifyServiceStop: (uuid: string) =>
+    invoke<string>("coolify_service_stop", { uuid }),
+  coolifyServiceRestart: (uuid: string) =>
+    invoke<string>("coolify_service_restart", { uuid }),
 
   hestiaWebDomains: () => invoke<unknown[]>("hestia_web_domains"),
   hestiaDnsRecords: (domain: string) =>
@@ -146,6 +211,7 @@ export const api = {
     rtype: string,
     value: string,
     priority: number | null,
+    ttl: number | null,
   ) =>
     invoke<string>("hestia_add_dns", {
       domain,
@@ -153,17 +219,72 @@ export const api = {
       rtype,
       value,
       priority,
+      ttl,
     }),
-  hestiaDeleteDns: (
-    domain: string,
-    record: string,
-    rtype: string,
-    value: string,
-  ) =>
-    invoke<string>("hestia_delete_dns", { domain, record, rtype, value }),
+  hestiaDeleteDns: (domain: string, record: string) =>
+    invoke<string>("hestia_delete_dns", { domain, record }),
   hestiaMailAccounts: (domain: string) =>
     invoke<unknown[]>("hestia_mail_accounts", { domain }),
   hestiaDatabases: () => invoke<unknown[]>("hestia_databases"),
+  hestiaAddWebDomain: (
+    domain: string,
+    ip: string | null,
+    aliases: string | null,
+  ) =>
+    invoke<string>("hestia_add_web_domain", { domain, ip, aliases }),
+  hestiaDeleteWebDomain: (domain: string) =>
+    invoke<string>("hestia_delete_web_domain", { domain }),
+  hestiaSuspendWebDomain: (domain: string) =>
+    invoke<string>("hestia_suspend_web_domain", { domain }),
+  hestiaUnsuspendWebDomain: (domain: string) =>
+    invoke<string>("hestia_unsuspend_web_domain", { domain }),
+  hestiaAddLetsencrypt: (domain: string) =>
+    invoke<string>("hestia_add_letsencrypt", { domain }),
+  hestiaDeleteLetsencrypt: (domain: string) =>
+    invoke<string>("hestia_delete_letsencrypt", { domain }),
+  hestiaMailDomains: () => invoke<unknown[]>("hestia_mail_domains"),
+  hestiaAddMailDomain: (domain: string) =>
+    invoke<string>("hestia_add_mail_domain", { domain }),
+  hestiaDeleteMailDomain: (domain: string) =>
+    invoke<string>("hestia_delete_mail_domain", { domain }),
+  hestiaAddMailAccount: (
+    domain: string,
+    account: string,
+    password: string,
+    quotaMb: number | null,
+  ) =>
+    invoke<string>("hestia_add_mail_account", {
+      domain,
+      account,
+      password,
+      quotaMb,
+    }),
+  hestiaDeleteMailAccount: (domain: string, account: string) =>
+    invoke<string>("hestia_delete_mail_account", { domain, account }),
+  hestiaChangeMailAccountPassword: (
+    domain: string,
+    account: string,
+    newPassword: string,
+  ) =>
+    invoke<string>("hestia_change_mail_account_password", {
+      domain,
+      account,
+      newPassword,
+    }),
+  hestiaAddDatabase: (
+    database: string,
+    dbuser: string,
+    dbpass: string,
+    dbtype: string | null,
+  ) =>
+    invoke<string>("hestia_add_database", {
+      database,
+      dbuser,
+      dbpass,
+      dbtype,
+    }),
+  hestiaDeleteDatabase: (database: string) =>
+    invoke<string>("hestia_delete_database", { database }),
 
   ghCurrentUser: () => invoke<unknown>("gh_current_user"),
   ghNotifications: () => invoke<unknown[]>("gh_notifications"),
@@ -202,6 +323,36 @@ export const api = {
     invoke<unknown[]>("gh_repo_tree", { owner, repo, refName }),
   ghFileContent: (owner: string, repo: string, path: string, refName: string) =>
     invoke<unknown>("gh_file_content", { owner, repo, path, refName }),
+  ghCreateRepo: (
+    name: string,
+    description: string | null,
+    isPrivate: boolean,
+    autoInit: boolean,
+  ) =>
+    invoke<unknown>("gh_create_repo", {
+      name,
+      description,
+      private: isPrivate,
+      autoInit,
+    }),
+  ghDeleteRepo: (owner: string, repo: string) =>
+    invoke<string>("gh_delete_repo", { owner, repo }),
+  ghUpdateRepo: (
+    owner: string,
+    repo: string,
+    description: string | null,
+    isPrivate: boolean | null,
+    defaultBranch: string | null,
+    archived: boolean | null,
+  ) =>
+    invoke<unknown>("gh_update_repo", {
+      owner,
+      repo,
+      description,
+      private: isPrivate,
+      defaultBranch,
+      archived,
+    }),
 
   sshOpen: (profileId: string, cols: number, rows: number) =>
     invoke<string>("ssh_open", { profileId, cols, rows }),

@@ -6,6 +6,8 @@ type Theme = "system" | "light" | "dark";
 const THEME_KEY = "ui.theme";
 const STORE_FILE = "settings.json";
 
+const ORDER: Theme[] = ["system", "light", "dark"];
+
 let storePromise: Promise<Store> | null = null;
 function getStore() {
   if (!storePromise) {
@@ -14,7 +16,12 @@ function getStore() {
   return storePromise;
 }
 
-export function useTheme(): [Theme, (t: Theme) => void, () => "light" | "dark"] {
+export function useTheme(): [
+  Theme,
+  (t: Theme) => void,
+  () => "light" | "dark",
+  () => void,
+] {
   const [theme, setThemeState] = useState<Theme>("system");
   const [resolved, setResolved] = useState<"light" | "dark">("dark");
 
@@ -51,5 +58,10 @@ export function useTheme(): [Theme, (t: Theme) => void, () => "light" | "dark"] 
       .catch(() => {});
   };
 
-  return [theme, setTheme, () => resolved];
+  const cycleTheme = () => {
+    const next = ORDER[(ORDER.indexOf(theme) + 1) % ORDER.length];
+    setTheme(next);
+  };
+
+  return [theme, setTheme, () => resolved, cycleTheme];
 }

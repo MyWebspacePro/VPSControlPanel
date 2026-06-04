@@ -306,6 +306,110 @@ impl GitHubClient {
             .await
     }
 
+    pub async fn create_repo(
+        &self,
+        name: &str,
+        description: Option<&str>,
+        private: bool,
+        auto_init: bool,
+    ) -> AppResult<Repo> {
+        let url = format!("{}/user/repos", self.base);
+        let mut body = serde_json::json!({
+            "name": name,
+            "private": private,
+            "auto_init": auto_init,
+        });
+        if let Some(desc) = description {
+            body["description"] = serde_json::Value::String(desc.to_string());
+        }
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&body)
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        Ok(serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub create_repo parse: {e}: {text}"))
+        })?)
+    }
+
+    pub async fn delete_repo(&self, owner: &str, repo: &str) -> AppResult<String> {
+        let url = format!("{}/repos/{owner}/{repo}", self.base);
+        let resp = self
+            .http
+            .delete(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        Ok(text)
+    }
+
+    pub async fn update_repo(
+        &self,
+        owner: &str,
+        repo: &str,
+        description: Option<&str>,
+        private: Option<bool>,
+        default_branch: Option<&str>,
+        archived: Option<bool>,
+    ) -> AppResult<Repo> {
+        let url = format!("{}/repos/{owner}/{repo}", self.base);
+        let mut body = serde_json::Map::new();
+        if let Some(d) = description {
+            body.insert("description".into(), serde_json::Value::String(d.to_string()));
+        }
+        if let Some(p) = private {
+            body.insert("private".into(), serde_json::Value::Bool(p));
+        }
+        if let Some(b) = default_branch {
+            body.insert("default_branch".into(), serde_json::Value::String(b.to_string()));
+        }
+        if let Some(a) = archived {
+            body.insert("archived".into(), serde_json::Value::Bool(a));
+        }
+        let resp = self
+            .http
+            .patch(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&serde_json::Value::Object(body))
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        Ok(serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub update_repo parse: {e}: {text}"))
+        })?)
+    }
+
     pub async fn repo_tree(
         &self,
         owner: &str,

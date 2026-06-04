@@ -219,8 +219,7 @@ function SshEditor({
               : { type: "agent" },
         default_dir: null,
       };
-      await api.upsertSsh(profile);
-      const out = await api.testSsh(profile.id);
+      const out = await api.testSshWithProfile(profile);
       alert(`OK: ${out.trim()}`);
     } catch (e) {
       setError(String(e));
