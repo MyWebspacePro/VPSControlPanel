@@ -970,6 +970,206 @@ async fn gh_update_repo<R: Runtime>(
 }
 
 #[tauri::command]
+async fn gh_create_issue<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    title: String,
+    body: Option<String>,
+    labels: Option<Vec<String>>,
+    assignees: Option<Vec<String>>,
+) -> AppResult<github::IssueFull> {
+    let client = gh_client(&app).await?;
+    client
+        .create_issue(
+            &owner,
+            &repo,
+            &title,
+            body.as_deref(),
+            labels,
+            assignees,
+        )
+        .await
+}
+
+#[tauri::command]
+async fn gh_update_issue<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    number: u64,
+    title: Option<String>,
+    body: Option<String>,
+    state: Option<String>,
+    labels: Option<Vec<String>>,
+    assignees: Option<Vec<String>>,
+) -> AppResult<github::IssueFull> {
+    let client = gh_client(&app).await?;
+    client
+        .update_issue(
+            &owner,
+            &repo,
+            number,
+            title.as_deref(),
+            body.as_deref(),
+            state.as_deref(),
+            labels,
+            assignees,
+        )
+        .await
+}
+
+#[tauri::command]
+async fn gh_create_issue_comment<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    number: u64,
+    body: String,
+) -> AppResult<github::PrComment> {
+    let client = gh_client(&app).await?;
+    client
+        .create_issue_comment(&owner, &repo, number, &body)
+        .await
+}
+
+#[tauri::command]
+async fn gh_update_issue_comment<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    comment_id: u64,
+    body: String,
+) -> AppResult<github::PrComment> {
+    let client = gh_client(&app).await?;
+    client
+        .update_issue_comment(&owner, &repo, comment_id, &body)
+        .await
+}
+
+#[tauri::command]
+async fn gh_delete_issue_comment<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    comment_id: u64,
+) -> AppResult<String> {
+    let client = gh_client(&app).await?;
+    client
+        .delete_issue_comment(&owner, &repo, comment_id)
+        .await
+}
+
+#[tauri::command]
+async fn gh_create_pull_request<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    title: String,
+    head: String,
+    base: String,
+    body: Option<String>,
+    draft: bool,
+) -> AppResult<github::PullRequest> {
+    let client = gh_client(&app).await?;
+    client
+        .create_pull_request(&owner, &repo, &title, &head, &base, body.as_deref(), draft)
+        .await
+}
+
+#[tauri::command]
+async fn gh_update_pull_request<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    number: u64,
+    title: Option<String>,
+    body: Option<String>,
+    state: Option<String>,
+    base: Option<String>,
+) -> AppResult<github::PullRequest> {
+    let client = gh_client(&app).await?;
+    client
+        .update_pull_request(
+            &owner,
+            &repo,
+            number,
+            title.as_deref(),
+            body.as_deref(),
+            state.as_deref(),
+            base.as_deref(),
+        )
+        .await
+}
+
+#[tauri::command]
+async fn gh_branches<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+) -> AppResult<Vec<serde_json::Value>> {
+    let client = gh_client(&app).await?;
+    client.list_branches(&owner, &repo).await
+}
+
+#[tauri::command]
+async fn gh_commits<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    sha: Option<String>,
+    path: Option<String>,
+) -> AppResult<Vec<serde_json::Value>> {
+    let client = gh_client(&app).await?;
+    client
+        .list_commits(&owner, &repo, sha.as_deref(), path.as_deref())
+        .await
+}
+
+#[tauri::command]
+async fn gh_update_file<R: Runtime>(
+    app: AppHandle<R>,
+    owner: String,
+    repo: String,
+    path: String,
+    message: String,
+    content: String,
+    sha: Option<String>,
+    branch: Option<String>,
+) -> AppResult<serde_json::Value> {
+    let client = gh_client(&app).await?;
+    client
+        .update_file_content(
+            &owner,
+            &repo,
+            &path,
+            &message,
+            &content,
+            sha.as_deref(),
+            branch.as_deref(),
+        )
+        .await
+}
+
+#[tauri::command]
+async fn gh_search<R: Runtime>(
+    app: AppHandle<R>,
+    query: String,
+) -> AppResult<Vec<github::Issue>> {
+    let client = gh_client(&app).await?;
+    client.search_issues_prs(&query).await
+}
+
+#[tauri::command]
+async fn gh_search_repositories<R: Runtime>(
+    app: AppHandle<R>,
+    query: String,
+) -> AppResult<Vec<github::Repo>> {
+    let client = gh_client(&app).await?;
+    client.search_repos(&query).await
+}
+
+#[tauri::command]
 async fn gh_repo_tree<R: Runtime>(
     app: AppHandle<R>,
     owner: String,
@@ -1017,6 +1217,7 @@ async fn ssh_open<R: Runtime>(
         .ok_or_else(|| AppError::ProfileNotFound(format!("ssh:{profile_id}")))?
         .clone();
     drop(p);
+    let _ = (cols, rows);
 
     let session_id = Uuid::new_v4().to_string();
     let handle = ssh::open_session(&app, session_id.clone(), profile, cols, rows).await?;
@@ -1065,6 +1266,38 @@ async fn ssh_disconnect<R: Runtime>(app: AppHandle<R>, session_id: String) -> Ap
         let _ = handle.disconnect().await;
     }
     Ok(())
+}
+
+#[tauri::command]
+async fn ssh_list_sessions<R: Runtime>(
+    app: AppHandle<R>,
+) -> AppResult<Vec<ssh::SshSessionInfo>> {
+    let state = app.state::<AppState>();
+    let sessions = state.ssh_sessions.read().await;
+    Ok(sessions
+        .values()
+        .map(|s| ssh::SshSessionInfo {
+            session_id: s.session_id.clone(),
+            profile_id: s.profile_id.clone(),
+            user: s.user.clone(),
+            host: s.host.clone(),
+            port: s.port,
+        })
+        .collect())
+}
+
+#[tauri::command]
+async fn ssh_get_buffer<R: Runtime>(
+    app: AppHandle<R>,
+    session_id: String,
+) -> AppResult<Vec<u8>> {
+    let state = app.state::<AppState>();
+    let sessions = state.ssh_sessions.read().await;
+    if let Some(handle) = sessions.get(&session_id) {
+        Ok(handle.drain_output().await)
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 #[tauri::command]
@@ -1196,10 +1429,24 @@ pub fn run() {
             gh_create_repo,
             gh_delete_repo,
             gh_update_repo,
+            gh_create_issue,
+            gh_update_issue,
+            gh_create_issue_comment,
+            gh_update_issue_comment,
+            gh_delete_issue_comment,
+            gh_create_pull_request,
+            gh_update_pull_request,
+            gh_branches,
+            gh_commits,
+            gh_update_file,
+            gh_search,
+            gh_search_repositories,
             ssh_open,
             ssh_write,
             ssh_resize,
             ssh_disconnect,
+            ssh_list_sessions,
+            ssh_get_buffer,
             ssh_exec,
         ])
         .run(tauri::generate_context!())

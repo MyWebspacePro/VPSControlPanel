@@ -6,6 +6,7 @@ import Dashboard from "./routes/Dashboard";
 import Coolify from "./routes/Coolify";
 import Hestia from "./routes/Hestia";
 import GitHub from "./routes/GitHub";
+import Terminal from "./routes/Terminal";
 import Settings from "./routes/Settings";
 import { PullRequestDetail, IssueDetail, RepoView } from "./routes/GitHubDetail";
 import "./styles/globals.css";
@@ -32,6 +33,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
             path="github/repos/:owner/:repo"
             element={<RepoView />}
           />
+          <Route path="terminal" element={<Terminal />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

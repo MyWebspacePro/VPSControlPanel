@@ -6,51 +6,38 @@ import "@xterm/xterm/css/xterm.css";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { api } from "../lib/api";
 import { useStore } from "../state/useStore";
-import { useTheme } from "../state/useTheme";
+import { useTerminalStore } from "../state/terminalStore";
 import { Link } from "react-router-dom";
 import {
   AlertCircle,
   Plus,
   X,
   Terminal as TerminalIcon,
+  ChevronDown,
   Server,
 } from "lucide-react";
 
-type TabStatus = "connecting" | "connected" | "disconnected" | "error";
-
-interface Tab {
-  id: string;
-  profileId: string;
-  profileName: string;
-  status: TabStatus;
-  error?: string;
-}
-
-interface TabState {
+type TabState = {
   term: XTerm;
   fit: FitAddon;
-  sessionId: string | null;
-  pendingOpen: Promise<string | null> | null;
   unlistens: { data: UnlistenFn | null; status: UnlistenFn | null };
   resizeObserver: ResizeObserver | null;
   containerEl: HTMLDivElement | null;
   disposed: boolean;
-}
+};
 
 const MAX_TABS = 3;
 
 export default function Terminal() {
   const profiles = useStore((s) => s.profiles);
   const sshProfiles = Object.values(profiles.ssh);
-  const [theme, , resolvedGetter] = useTheme();
-  const [tabs, setTabs] = useState<Tab[]>([]);
-  const [activeTab, setActiveTab] = useState<string | null>(null);
+  const { tabs, activeTabId, addTab, removeTab, setActiveTab, updateTab } =
+    useTerminalStore();
   const [showProfilePicker, setShowProfilePicker] = useState(false);
 
   const tabStatesRef = useRef<Map<string, TabState>>(new Map());
   const profilePickerRef = useRef<HTMLDivElement>(null);
 
-  // Close profile picker on outside click
   useEffect(() => {
     if (!showProfilePicker) return;
     const handle = (e: MouseEvent) => {
@@ -65,35 +52,15 @@ export default function Terminal() {
     return () => document.removeEventListener("mousedown", handle);
   }, [showProfilePicker]);
 
-  // Update xterm themes when user toggles dark mode
-  useEffect(() => {
-    const t = getTheme(resolvedGetter());
-    for (const state of tabStatesRef.current.values()) {
-      if (!state.disposed) {
-        state.term.options.theme = t;
-      }
-    }
-  }, [theme, resolvedGetter]);
-
-  // Manage tab lifecycle: create state for new tabs, clean up removed tabs
+  // Reconcile per-tab xterm state with the tab list.
   useEffect(() => {
     const states = tabStatesRef.current;
     const validIds = new Set(tabs.map((t) => t.id));
 
-    // Clean up tabs that no longer exist
+    // Tear down state for removed tabs
     for (const [id, state] of Array.from(states.entries())) {
       if (!validIds.has(id)) {
         state.disposed = true;
-        // If sshOpen is in flight, wait for it then disconnect
-        if (state.pendingOpen) {
-          state.pendingOpen
-            .then((sessionId) => {
-              if (sessionId) api.sshDisconnect(sessionId).catch(() => {});
-            })
-            .catch(() => {});
-        } else if (state.sessionId) {
-          api.sshDisconnect(state.sessionId).catch(() => {});
-        }
         state.unlistens.data?.();
         state.unlistens.status?.();
         state.unlistens.data = null;
@@ -109,18 +76,21 @@ export default function Terminal() {
       }
     }
 
-    // Set up new tabs
+    // Create xterm for each new tab that has a sessionId
     for (const tab of tabs) {
       if (states.has(tab.id)) continue;
+      if (!tab.sessionId) continue;
       const containerEl = document.getElementById(
         `terminal-container-${tab.id}`,
       ) as HTMLDivElement | null;
       if (!containerEl) continue;
 
+      const isDark =
+        document.documentElement.classList.contains("dark");
       const term = new XTerm({
         fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
         fontSize: 13,
-        theme: getTheme(resolvedGetter()),
+        theme: getTheme(isDark),
         cursorBlink: true,
         allowProposedApi: true,
         scrollback: 10000,
@@ -139,8 +109,6 @@ export default function Terminal() {
       const state: TabState = {
         term,
         fit,
-        sessionId: null,
-        pendingOpen: null,
         unlistens: { data: null, status: null },
         resizeObserver: null,
         containerEl,
@@ -150,20 +118,25 @@ export default function Terminal() {
 
       term.onData((data) => {
         if (state.disposed) return;
-        if (state.sessionId) {
+        const tabNow = useTerminalStore
+          .getState()
+          .tabs.find((t) => t.id === tab.id);
+        if (tabNow?.sessionId) {
           const arr = new Array(data.length);
           for (let i = 0; i < data.length; i++) arr[i] = data.charCodeAt(i);
-          api.sshWrite(state.sessionId, arr).catch(() => {});
+          api.sshWrite(tabNow.sessionId, arr).catch(() => {});
         }
       });
 
-      // Resize observer attached synchronously, before the async open
       const ro = new ResizeObserver(() => {
         try {
           fit.fit();
-          if (state.sessionId) {
+          const tabNow = useTerminalStore
+            .getState()
+            .tabs.find((t) => t.id === tab.id);
+          if (tabNow?.sessionId) {
             api
-              .sshResize(state.sessionId, term.cols, term.rows)
+              .sshResize(tabNow.sessionId, term.cols, term.rows)
               .catch(() => {});
           }
         } catch {}
@@ -171,109 +144,74 @@ export default function Terminal() {
       ro.observe(containerEl);
       state.resizeObserver = ro;
 
-      term.writeln("\x1b[90mVerbinde …\x1b[0m");
-
+      const sessionId = tab.sessionId;
       const tabId = tab.id;
-      const profileId = tab.profileId;
 
-      const openPromise = (async () => {
-        try {
-          const cols = term.cols || 80;
-          const rows = term.rows || 24;
-          const sessionId = await api.sshOpen(profileId, cols, rows);
-          // If the tab was closed while we were awaiting, disconnect now
-          if (state.disposed) {
-            api.sshDisconnect(sessionId).catch(() => {});
-            return sessionId;
-          }
-          state.sessionId = sessionId;
-          state.pendingOpen = null;
-          setTabs((prev) =>
-            prev.map((t) =>
-              t.id === tabId ? { ...t, status: "connecting" } : t,
-            ),
-          );
-
-          const dataUnlisten = await listen<{
-            session_id: string;
-            data: number[];
-          }>("ssh://data", (e) => {
-            if (e.payload.session_id === sessionId) {
-              term.write(new Uint8Array(e.payload.data));
-            }
-          });
-          if (state.disposed) {
-            dataUnlisten();
-            api.sshDisconnect(sessionId).catch(() => {});
-            return sessionId;
-          }
-          state.unlistens.data = dataUnlisten;
-
-          const statusUnlisten = await listen<{
-            session_id: string;
-            status: string;
-          }>("ssh://status", (e) => {
-            if (e.payload.session_id !== sessionId) return;
-            const status = e.payload.status;
-            if (status === "connected") {
-              term.clear();
-              setTabs((prev) =>
-                prev.map((t) =>
-                  t.id === tabId ? { ...t, status: "connected" } : t,
-                ),
-              );
-            } else if (status === "disconnected" || status.startsWith("error")) {
-              if (status !== "connecting") {
-                term.writeln(`\r\n\x1b[90m[${status}]\x1b[0m`);
-                setTabs((prev) =>
-                  prev.map((t) =>
-                    t.id === tabId ? { ...t, status: "disconnected" } : t,
-                  ),
-                );
-              }
-            }
-          });
-          if (state.disposed) {
-            statusUnlisten();
-            dataUnlisten();
-            api.sshDisconnect(sessionId).catch(() => {});
-            return sessionId;
-          }
-          state.unlistens.status = statusUnlisten;
-          return sessionId;
-        } catch (e) {
-          if (!state.disposed) {
-            term.writeln(`\r\n\x1b[31mFehler: ${e}\x1b[0m`);
-            setTabs((prev) =>
-              prev.map((t) =>
-                t.id === tabId
-                  ? { ...t, status: "error", error: String(e) }
-                  : t,
-              ),
-            );
-          }
-          throw e;
+      // Subscribe to events FIRST so we don't miss anything arriving
+      // between the subscribe and the buffer drain.
+      listen<{ session_id: string; data: number[] }>("ssh://data", (e) => {
+        if (state.disposed) return;
+        if (e.payload.session_id === sessionId) {
+          term.write(new Uint8Array(e.payload.data));
         }
-      })();
-      state.pendingOpen = openPromise.catch(() => null);
+      }).then((u) => {
+        if (state.disposed) u();
+        else state.unlistens.data = u;
+      });
+
+      listen<{ session_id: string; status: string }>(
+        "ssh://status",
+        (e) => {
+          if (state.disposed) return;
+          if (e.payload.session_id !== sessionId) return;
+          const status = e.payload.status;
+          if (status === "disconnected" || status.startsWith("error")) {
+            term.writeln(`\r\n\x1b[90m[${status}]\x1b[0m`);
+            updateTab(tabId, { status: "disconnected" });
+          }
+        },
+      ).then((u) => {
+        if (state.disposed) u();
+        else state.unlistens.status = u;
+      });
+
+      // Now drain the buffered output (everything up to this moment)
+      api
+        .sshGetBuffer(sessionId)
+        .then((arr) => {
+          if (state.disposed || arr.length === 0) return;
+          term.write(new Uint8Array(arr));
+          updateTab(tabId, { status: "connected" });
+        })
+        .catch(() => {});
     }
-  }, [tabs, resolvedGetter]);
+  }, [tabs, updateTab]);
 
-  // Cleanup all on unmount
+  // Re-fit when active tab changes
   useEffect(() => {
-    const states = tabStatesRef.current;
-    return () => {
-      for (const [, state] of Array.from(states.entries())) {
-        state.disposed = true;
-        if (state.pendingOpen) {
-          state.pendingOpen
-            .then((sessionId) => {
-              if (sessionId) api.sshDisconnect(sessionId).catch(() => {});
-            })
+    if (!activeTabId) return;
+    const state = tabStatesRef.current.get(activeTabId);
+    if (!state) return;
+    requestAnimationFrame(() => {
+      try {
+        state.fit.fit();
+        const tab = useTerminalStore
+          .getState()
+          .tabs.find((t) => t.id === activeTabId);
+        if (tab?.sessionId) {
+          api
+            .sshResize(tab.sessionId, state.term.cols, state.term.rows)
             .catch(() => {});
-        } else if (state.sessionId) {
-          api.sshDisconnect(state.sessionId).catch(() => {});
         }
+      } catch {}
+    });
+  }, [activeTabId]);
+
+  // On unmount: dispose all xterms. SSH sessions stay alive in Rust.
+  useEffect(() => {
+    return () => {
+      for (const state of tabStatesRef.current.values()) {
+        state.disposed = true;
         state.unlistens.data?.();
         state.unlistens.status?.();
         state.unlistens.data = null;
@@ -286,26 +224,9 @@ export default function Terminal() {
           state.term.dispose();
         } catch {}
       }
-      states.clear();
+      tabStatesRef.current.clear();
     };
   }, []);
-
-  // Re-fit when active tab changes
-  useEffect(() => {
-    if (!activeTab) return;
-    const state = tabStatesRef.current.get(activeTab);
-    if (!state) return;
-    requestAnimationFrame(() => {
-      try {
-        state.fit.fit();
-        if (state.sessionId) {
-          api
-            .sshResize(state.sessionId, state.term.cols, state.term.rows)
-            .catch(() => {});
-        }
-      } catch {}
-    });
-  }, [activeTab]);
 
   if (sshProfiles.length === 0) {
     return (
@@ -330,36 +251,40 @@ export default function Terminal() {
     );
   }
 
-  const openTab = (profileId: string) => {
-    setTabs((prev) => {
-      if (prev.length >= MAX_TABS) return prev;
-      const profile = sshProfiles.find((p) => p.id === profileId);
-      if (!profile) return prev;
-      const id = crypto.randomUUID();
-      const newTab: Tab = {
-        id,
-        profileId,
-        profileName: profile.name,
-        status: "connecting",
-      };
-      // Schedule active tab change after this state update
-      queueMicrotask(() => setActiveTab(id));
-      setShowProfilePicker(false);
-      return [...prev, newTab];
+  const openTab = async (profileId: string) => {
+    if (tabs.length >= MAX_TABS) return;
+    const profile = sshProfiles.find((p) => p.id === profileId);
+    if (!profile) return;
+    const tabId = crypto.randomUUID();
+    addTab({
+      id: tabId,
+      profileId: profile.id,
+      profileName: profile.name,
+      status: "connecting",
+      sessionId: null,
     });
+    setActiveTab(tabId);
+    setShowProfilePicker(false);
+    try {
+      const cols = 80;
+      const rows = 24;
+      const sessionId = await api.sshOpen(profile.id, cols, rows);
+      updateTab(tabId, { sessionId, status: "connecting" });
+    } catch (e) {
+      updateTab(tabId, { status: "error", error: String(e) });
+    }
   };
 
-  const closeTab = (id: string) => {
-    setTabs((prev) => {
-      const remaining = prev.filter((t) => t.id !== id);
-      // If we just closed the active tab, switch to the first remaining
-      if (activeTab === id) {
-        queueMicrotask(() =>
-          setActiveTab(remaining.length > 0 ? remaining[0].id : null),
-        );
+  const closeTab = async (id: string) => {
+    const tab = tabs.find((t) => t.id === id);
+    if (tab?.sessionId) {
+      try {
+        await api.sshDisconnect(tab.sessionId);
+      } catch (e) {
+        console.error("ssh_disconnect failed", e);
       }
-      return remaining;
-    });
+    }
+    removeTab(id);
   };
 
   if (tabs.length === 0) {
@@ -417,7 +342,7 @@ export default function Terminal() {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-3 py-1.5 rounded-t-md text-xs whitespace-nowrap transition ${
-                activeTab === tab.id
+                activeTabId === tab.id
                   ? "bg-[#0b0d10] text-[var(--text)]"
                   : "text-[var(--text-muted)] hover:bg-[var(--bg)]"
               }`}
@@ -426,7 +351,7 @@ export default function Terminal() {
               {tab.profileName}
               <span
                 className={`w-1.5 h-1.5 rounded-full ${
-                  tab.status === "connected"
+                  tab.status === "connected" || tab.status === "restored"
                     ? "bg-[var(--success)]"
                     : tab.status === "error"
                       ? "bg-[var(--danger)]"
@@ -468,11 +393,7 @@ export default function Terminal() {
           >
             <Plus size={14} />
             Neu
-            {atCap && (
-              <span className="text-[10px] opacity-70">
-                ({tabs.length}/{MAX_TABS})
-              </span>
-            )}
+            <ChevronDown size={10} />
           </button>
           {showProfilePicker && (
             <div className="absolute top-full right-0 mt-1 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg shadow-lg z-20 min-w-[220px]">
@@ -504,7 +425,7 @@ export default function Terminal() {
             key={tab.id}
             id={`terminal-container-${tab.id}`}
             className="absolute inset-0 p-2"
-            style={{ display: tab.id === activeTab ? "block" : "none" }}
+            style={{ display: tab.id === activeTabId ? "block" : "none" }}
           />
         ))}
       </div>
@@ -512,8 +433,8 @@ export default function Terminal() {
   );
 }
 
-function getTheme(resolved: "light" | "dark") {
-  return resolved === "dark"
+function getTheme(isDark: boolean) {
+  return isDark
     ? {
         background: "#0b0d10",
         foreground: "#e5e7eb",

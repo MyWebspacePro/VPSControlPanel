@@ -301,6 +301,410 @@ impl GitHubClient {
         .await
     }
 
+    pub async fn create_issue(
+        &self,
+        owner: &str,
+        repo: &str,
+        title: &str,
+        body: Option<&str>,
+        labels: Option<Vec<String>>,
+        assignees: Option<Vec<String>>,
+    ) -> AppResult<IssueFull> {
+        let url = format!("{}/repos/{owner}/{repo}/issues", self.base);
+        let mut payload = serde_json::json!({ "title": title });
+        if let Some(b) = body {
+            payload["body"] = serde_json::Value::String(b.to_string());
+        }
+        if let Some(l) = labels {
+            payload["labels"] = serde_json::Value::Array(
+                l.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+            );
+        }
+        if let Some(a) = assignees {
+            payload["assignees"] = serde_json::Value::Array(
+                a.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+            );
+        }
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&payload)
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub create_issue parse: {e}: {text}"))
+        })
+    }
+
+    pub async fn update_issue(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+        title: Option<&str>,
+        body: Option<&str>,
+        state: Option<&str>,
+        labels: Option<Vec<String>>,
+        assignees: Option<Vec<String>>,
+    ) -> AppResult<IssueFull> {
+        let url = format!("{}/repos/{owner}/{repo}/issues/{number}", self.base);
+        let mut payload = serde_json::Map::new();
+        if let Some(t) = title {
+            payload.insert("title".into(), serde_json::Value::String(t.to_string()));
+        }
+        if let Some(b) = body {
+            payload.insert("body".into(), serde_json::Value::String(b.to_string()));
+        }
+        if let Some(s) = state {
+            payload.insert("state".into(), serde_json::Value::String(s.to_string()));
+        }
+        if let Some(l) = labels {
+            payload.insert(
+                "labels".into(),
+                serde_json::Value::Array(
+                    l.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+                ),
+            );
+        }
+        if let Some(a) = assignees {
+            payload.insert(
+                "assignees".into(),
+                serde_json::Value::Array(
+                    a.iter().map(|s| serde_json::Value::String(s.clone())).collect(),
+                ),
+            );
+        }
+        let resp = self
+            .http
+            .patch(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&serde_json::Value::Object(payload))
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub update_issue parse: {e}: {text}"))
+        })
+    }
+
+    pub async fn create_issue_comment(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+        body: &str,
+    ) -> AppResult<PrComment> {
+        let url = format!("{}/repos/{owner}/{repo}/issues/{number}/comments", self.base);
+        let payload = serde_json::json!({ "body": body });
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&payload)
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub create_comment parse: {e}: {text}"))
+        })
+    }
+
+    pub async fn update_issue_comment(
+        &self,
+        owner: &str,
+        repo: &str,
+        comment_id: u64,
+        body: &str,
+    ) -> AppResult<PrComment> {
+        let url = format!(
+            "{}/repos/{owner}/{repo}/issues/comments/{comment_id}",
+            self.base
+        );
+        let payload = serde_json::json!({ "body": body });
+        let resp = self
+            .http
+            .patch(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&payload)
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub update_comment parse: {e}: {text}"))
+        })
+    }
+
+    pub async fn delete_issue_comment(
+        &self,
+        owner: &str,
+        repo: &str,
+        comment_id: u64,
+    ) -> AppResult<String> {
+        let url = format!(
+            "{}/repos/{owner}/{repo}/issues/comments/{comment_id}",
+            self.base
+        );
+        let resp = self
+            .http
+            .delete(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        Ok(text)
+    }
+
+    pub async fn create_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        title: &str,
+        head: &str,
+        base: &str,
+        body: Option<&str>,
+        draft: bool,
+    ) -> AppResult<PullRequest> {
+        let url = format!("{}/repos/{owner}/{repo}/pulls", self.base);
+        let mut payload = serde_json::json!({
+            "title": title,
+            "head": head,
+            "base": base,
+            "draft": draft,
+        });
+        if let Some(b) = body {
+            payload["body"] = serde_json::Value::String(b.to_string());
+        }
+        let resp = self
+            .http
+            .post(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&payload)
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub create_pr parse: {e}: {text}"))
+        })
+    }
+
+    pub async fn update_pull_request(
+        &self,
+        owner: &str,
+        repo: &str,
+        number: u64,
+        title: Option<&str>,
+        body: Option<&str>,
+        state: Option<&str>,
+        base: Option<&str>,
+    ) -> AppResult<PullRequest> {
+        let url = format!("{}/repos/{owner}/{repo}/pulls/{number}", self.base);
+        let mut payload = serde_json::Map::new();
+        if let Some(t) = title {
+            payload.insert("title".into(), serde_json::Value::String(t.to_string()));
+        }
+        if let Some(b) = body {
+            payload.insert("body".into(), serde_json::Value::String(b.to_string()));
+        }
+        if let Some(s) = state {
+            payload.insert("state".into(), serde_json::Value::String(s.to_string()));
+        }
+        if let Some(b) = base {
+            payload.insert("base".into(), serde_json::Value::String(b.to_string()));
+        }
+        let resp = self
+            .http
+            .patch(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&serde_json::Value::Object(payload))
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub update_pr parse: {e}: {text}"))
+        })
+    }
+
+    pub async fn list_branches(
+        &self,
+        owner: &str,
+        repo: &str,
+    ) -> AppResult<Vec<serde_json::Value>> {
+        self.gh(
+            reqwest::Method::GET,
+            &format!("/repos/{owner}/{repo}/branches?per_page=50"),
+        )
+        .await
+    }
+
+    pub async fn list_commits(
+        &self,
+        owner: &str,
+        repo: &str,
+        sha: Option<&str>,
+        path: Option<&str>,
+    ) -> AppResult<Vec<serde_json::Value>> {
+        let mut path_q = String::new();
+        if let Some(s) = sha {
+            path_q.push_str(&format!("&sha={}", url_encode(s)));
+        }
+        if let Some(p) = path {
+            path_q.push_str(&format!("&path={}", url_encode(p)));
+        }
+        let url = format!(
+            "{}/repos/{owner}/{repo}/commits?per_page=30{}",
+            self.base, path_q
+        );
+        let resp = self
+            .http
+            .get(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub list_commits parse: {e}: {text}"))
+        })
+    }
+
+    pub async fn update_file_content(
+        &self,
+        owner: &str,
+        repo: &str,
+        path: &str,
+        message: &str,
+        content: &str,
+        sha: Option<&str>,
+        branch: Option<&str>,
+    ) -> AppResult<serde_json::Value> {
+        use base64::Engine;
+        let url = format!(
+            "{}/repos/{owner}/{repo}/contents/{}",
+            self.base,
+            url_encode(path)
+        );
+        let mut payload = serde_json::json!({
+            "message": message,
+            "content": base64::engine::general_purpose::STANDARD.encode(content.as_bytes()),
+        });
+        if let Some(s) = sha {
+            payload["sha"] = serde_json::Value::String(s.to_string());
+        }
+        if let Some(b) = branch {
+            payload["branch"] = serde_json::Value::String(b.to_string());
+        }
+        let resp = self
+            .http
+            .put(&url)
+            .bearer_auth(&self.token)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&payload)
+            .send()
+            .await?;
+        let status = resp.status();
+        let text = resp.text().await.unwrap_or_default();
+        if !status.is_success() {
+            return Err(AppError::Api {
+                status: status.as_u16(),
+                message: text,
+            });
+        }
+        serde_json::from_str(&text).map_err(|e| {
+            AppError::Other(format!("GitHub update_file parse: {e}: {text}"))
+        })
+    }
+
+    pub async fn search_issues_prs(
+        &self,
+        query: &str,
+    ) -> AppResult<Vec<Issue>> {
+        let q = url_encode(query);
+        let path = format!("/search/issues?q={q}&per_page=30");
+        let resp: SearchIssuesResponse = self.gh(reqwest::Method::GET, &path).await?;
+        Ok(resp.items)
+    }
+
+    pub async fn search_repos(&self, query: &str) -> AppResult<Vec<Repo>> {
+        let q = url_encode(query);
+        let path = format!("/search/repositories?q={q}&per_page=30");
+        let resp: SearchReposResponse = self.gh(reqwest::Method::GET, &path).await?;
+        Ok(resp.items)
+    }
+
     pub async fn repos(&self) -> AppResult<Vec<Repo>> {
         self.gh(reqwest::Method::GET, "/user/repos?per_page=50&sort=updated")
             .await
@@ -611,6 +1015,12 @@ pub struct PrReview {
 pub struct SearchIssuesResponse {
     pub total_count: u64,
     pub items: Vec<Issue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchReposResponse {
+    pub total_count: u64,
+    pub items: Vec<Repo>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

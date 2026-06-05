@@ -3,15 +3,23 @@ use crate::state::SshProfile;
 use russh::client::{self, Handle, Msg};
 use russh::keys::{self as rkeys, PrivateKey, PrivateKeyWithHashAlg};
 use russh::Channel;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Runtime};
 use tokio::io::AsyncReadExt;
 use tokio::sync::{mpsc, Mutex};
 
+const OUTPUT_BUFFER_MAX: usize = 1024 * 1024; // 1 MB cap per session
+
 #[derive(Clone)]
 pub struct SshHandle {
     pub session_id: String,
+    pub profile_id: String,
+    pub user: String,
+    pub host: String,
+    pub port: u16,
+    pub output_buffer: Arc<Mutex<Vec<u8>>>,
     inner: Arc<SshInner>,
 }
 
@@ -24,6 +32,15 @@ enum SshCommand {
     Write(Vec<u8>),
     Resize { cols: u16, rows: u16 },
     Disconnect,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SshSessionInfo {
+    pub session_id: String,
+    pub profile_id: String,
+    pub user: String,
+    pub host: String,
+    pub port: u16,
 }
 
 impl SshHandle {
@@ -52,6 +69,12 @@ impl SshHandle {
         *self.inner.connected.lock().await = false;
         Ok(())
     }
+
+    /// Read the buffered output, draining the buffer.
+    pub async fn drain_output(&self) -> Vec<u8> {
+        let mut buf = self.output_buffer.lock().await;
+        std::mem::take(&mut *buf)
+    }
 }
 
 pub async fn open_session<R: Runtime>(
@@ -62,18 +85,25 @@ pub async fn open_session<R: Runtime>(
     initial_rows: u16,
 ) -> AppResult<SshHandle> {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SshCommand>();
+    let output_buffer: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
     let inner = Arc::new(SshInner {
         cmd_tx: cmd_tx.clone(),
         connected: Arc::new(Mutex::new(false)),
     });
     let handle = SshHandle {
         session_id: session_id.clone(),
+        profile_id: profile.id.clone(),
+        user: profile.user.clone(),
+        host: profile.host.clone(),
+        port: profile.port,
+        output_buffer: output_buffer.clone(),
         inner: inner.clone(),
     };
 
     let app_clone = app.clone();
     let session_id_clone = session_id.clone();
     let inner_clone = inner.clone();
+    let output_buffer_clone = output_buffer.clone();
 
     tokio::spawn(async move {
         if let Err(e) = run_session(
@@ -84,6 +114,7 @@ pub async fn open_session<R: Runtime>(
             initial_rows,
             cmd_rx,
             inner_clone,
+            output_buffer_clone,
         )
         .await
         {
@@ -197,6 +228,7 @@ async fn run_session<R: Runtime>(
     rows: u16,
     mut cmd_rx: mpsc::UnboundedReceiver<SshCommand>,
     inner: Arc<SshInner>,
+    output_buffer: Arc<Mutex<Vec<u8>>>,
 ) -> AppResult<()> {
     emit_status(&app, &session_id, "connecting");
 
@@ -253,6 +285,15 @@ async fn run_session<R: Runtime>(
                 match read {
                     Ok(0) => break,
                     Ok(n) => {
+                        // Append to ring buffer (capped at OUTPUT_BUFFER_MAX)
+                        {
+                            let mut buf = output_buffer.lock().await;
+                            buf.extend_from_slice(&data_buf[..n]);
+                            if buf.len() > OUTPUT_BUFFER_MAX {
+                                let drop_n = buf.len() - OUTPUT_BUFFER_MAX;
+                                buf.drain(..drop_n);
+                            }
+                        }
                         let payload = data_buf[..n].to_vec();
                         let _ = app.emit("ssh://data", SshDataPayload {
                             session_id: session_id.clone(),

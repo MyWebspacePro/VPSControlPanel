@@ -353,6 +353,123 @@ export const api = {
       defaultBranch,
       archived,
     }),
+  ghCreateIssue: (
+    owner: string,
+    repo: string,
+    title: string,
+    body: string | null,
+    labels: string[] | null,
+    assignees: string[] | null,
+  ) =>
+    invoke<unknown>("gh_create_issue", {
+      owner,
+      repo,
+      title,
+      body,
+      labels,
+      assignees,
+    }),
+  ghUpdateIssue: (
+    owner: string,
+    repo: string,
+    number: number,
+    title: string | null,
+    body: string | null,
+    state: "open" | "closed" | null,
+    labels: string[] | null,
+    assignees: string[] | null,
+  ) =>
+    invoke<unknown>("gh_update_issue", {
+      owner,
+      repo,
+      number,
+      title,
+      body,
+      state,
+      labels,
+      assignees,
+    }),
+  ghCreateIssueComment: (
+    owner: string,
+    repo: string,
+    number: number,
+    body: string,
+  ) => invoke<unknown>("gh_create_issue_comment", { owner, repo, number, body }),
+  ghUpdateIssueComment: (
+    owner: string,
+    repo: string,
+    commentId: number,
+    body: string,
+  ) =>
+    invoke<unknown>("gh_update_issue_comment", {
+      owner,
+      repo,
+      commentId,
+      body,
+    }),
+  ghDeleteIssueComment: (owner: string, repo: string, commentId: number) =>
+    invoke<string>("gh_delete_issue_comment", { owner, repo, commentId }),
+  ghCreatePullRequest: (
+    owner: string,
+    repo: string,
+    title: string,
+    head: string,
+    base: string,
+    body: string | null,
+    draft: boolean,
+  ) =>
+    invoke<unknown>("gh_create_pull_request", {
+      owner,
+      repo,
+      title,
+      head,
+      base,
+      body,
+      draft,
+    }),
+  ghUpdatePullRequest: (
+    owner: string,
+    repo: string,
+    number: number,
+    title: string | null,
+    body: string | null,
+    state: "open" | "closed" | null,
+    base: string | null,
+  ) =>
+    invoke<unknown>("gh_update_pull_request", {
+      owner,
+      repo,
+      number,
+      title,
+      body,
+      state,
+      base,
+    }),
+  ghBranches: (owner: string, repo: string) =>
+    invoke<unknown[]>("gh_branches", { owner, repo }),
+  ghCommits: (owner: string, repo: string, sha: string | null, path: string | null) =>
+    invoke<unknown[]>("gh_commits", { owner, repo, sha, path }),
+  ghUpdateFile: (
+    owner: string,
+    repo: string,
+    path: string,
+    message: string,
+    content: string,
+    sha: string | null,
+    branch: string | null,
+  ) =>
+    invoke<unknown>("gh_update_file", {
+      owner,
+      repo,
+      path,
+      message,
+      content,
+      sha,
+      branch,
+    }),
+  ghSearch: (query: string) => invoke<unknown[]>("gh_search", { query }),
+  ghSearchRepositories: (query: string) =>
+    invoke<unknown[]>("gh_search_repositories", { query }),
 
   sshOpen: (profileId: string, cols: number, rows: number) =>
     invoke<string>("ssh_open", { profileId, cols, rows }),
@@ -364,4 +481,7 @@ export const api = {
     invoke<void>("ssh_disconnect", { sessionId }),
   sshExec: (profileId: string, command: string, timeoutSecs: number | null) =>
     invoke<string>("ssh_exec", { profileId, command, timeoutSecs }),
+  sshListSessions: () => invoke<unknown[]>("ssh_list_sessions"),
+  sshGetBuffer: (sessionId: string) =>
+    invoke<number[]>("ssh_get_buffer", { sessionId }),
 };

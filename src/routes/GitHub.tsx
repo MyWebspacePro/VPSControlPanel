@@ -15,9 +15,10 @@ import {
   Loader2,
   Edit3,
   RefreshCw,
+  Search,
 } from "lucide-react";
 
-type Tab = "inbox" | "issues" | "notifications" | "repos";
+type Tab = "inbox" | "issues" | "notifications" | "repos" | "search";
 
 export default function GitHub() {
   const profile = useStore((s) => s.profiles.github);
@@ -35,6 +36,10 @@ export default function GitHub() {
     isPrivate: false,
     autoInit: true,
   });
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchReposResults, setSearchReposResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
 
   const load = async () => {
     if (!profile) return;
@@ -56,7 +61,27 @@ export default function GitHub() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
+
+  const runSearch = async (q: string) => {
+    if (!q.trim()) {
+      setSearchResults([]);
+      setSearchReposResults([]);
+      return;
+    }
+    setSearchLoading(true);
+    try {
+      const [issues, repos] = await Promise.all([
+        api.ghSearch(q).catch(() => []),
+        api.ghSearchRepositories(q).catch(() => []),
+      ]);
+      setSearchResults(issues as any[]);
+      setSearchReposResults(repos as any[]);
+    } finally {
+      setSearchLoading(false);
+    }
+  };
 
   if (!profile) {
     return (
@@ -165,6 +190,7 @@ export default function GitHub() {
             count: notifications.filter((n) => n.unread).length,
           },
           { key: "repos", label: "Repos", icon: Box, count: repos.length },
+          { key: "search", label: "Suche", icon: Search, count: 0 },
         ] as const).map((t) => (
           <button
             key={t.key}
@@ -207,11 +233,20 @@ export default function GitHub() {
             }
           }}
         />
-      ) : (
+      ) : tab === "repos" ? (
         <RepoList
           repos={repos}
           onDelete={deleteRepo}
           onEdit={(r) => setEditingRepo(r)}
+        />
+      ) : (
+        <SearchView
+          query={searchQuery}
+          setQuery={setSearchQuery}
+          onSearch={runSearch}
+          loading={searchLoading}
+          issues={searchResults}
+          repos={searchReposResults}
         />
       )}
 
@@ -394,9 +429,7 @@ function ModalFooter({
 
 function PrList({ prs }: { prs: any[] }) {
   if (prs.length === 0)
-    return (
-      <div className="text-sm text-[var(--text-muted)]">Keine offenen PRs.</div>
-    );
+    return <div className="text-sm text-[var(--text-muted)]">Keine offenen PRs.</div>;
   return (
     <div className="space-y-2">
       {prs.map((p) => (
@@ -421,9 +454,7 @@ function PrList({ prs }: { prs: any[] }) {
 
 function IssueList({ issues }: { issues: any[] }) {
   if (issues.length === 0)
-    return (
-      <div className="text-sm text-[var(--text-muted)]">Keine zugewiesenen Issues.</div>
-    );
+    return <div className="text-sm text-[var(--text-muted)]">Keine zugewiesenen Issues.</div>;
   return (
     <div className="space-y-2">
       {issues.map((i) => {
@@ -459,9 +490,7 @@ function NotificationList({
   onMarkRead: (id: string) => void;
 }) {
   if (notifications.length === 0)
-    return (
-      <div className="text-sm text-[var(--text-muted)]">Keine Benachrichtigungen.</div>
-    );
+    return <div className="text-sm text-[var(--text-muted)]">Keine Benachrichtigungen.</div>;
   return (
     <div className="space-y-2">
       {notifications.map((n) => (
@@ -510,10 +539,7 @@ function RepoList({
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
       {repos.map((r) => (
-        <div
-          key={r.id}
-          className="card flex flex-col gap-2"
-        >
+        <div key={r.id} className="card flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <Link
               to={`/github/repos/${r.owner?.login || r.full_name.split("/")[0]}/${r.name}`}
@@ -533,10 +559,7 @@ function RepoList({
             {r.stargazers_count != null && <span>★ {r.stargazers_count}</span>}
           </div>
           <div className="flex gap-1 pt-2 border-t border-[var(--border)]">
-            <button
-              className="btn text-xs flex-1"
-              onClick={() => onEdit(r)}
-            >
+            <button className="btn text-xs flex-1" onClick={() => onEdit(r)}>
               <Edit3 size={12} />
               Bearbeiten
             </button>
@@ -549,6 +572,141 @@ function RepoList({
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function SearchView({
+  query,
+  setQuery,
+  onSearch,
+  loading,
+  issues,
+  repos,
+}: {
+  query: string;
+  setQuery: (q: string) => void;
+  onSearch: (q: string) => void;
+  loading: boolean;
+  issues: any[];
+  repos: any[];
+}) {
+  return (
+    <div className="space-y-4">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSearch(query);
+        }}
+        className="flex gap-2"
+      >
+        <input
+          className="input flex-1"
+          placeholder="z.B. repo:mein-org/mein-repo is:open author:@me"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+        />
+        <button
+          type="submit"
+          className="btn btn-primary"
+          disabled={loading || !query.trim()}
+        >
+          {loading ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Search size={14} />
+          )}
+          Suchen
+        </button>
+      </form>
+      <div className="text-[11px] text-[var(--text-muted)]">
+        GitHub-Suchsyntax: <code>is:open</code> <code>is:pr</code>{" "}
+        <code>is:issue</code> <code>label:bug</code> <code>author:@me</code>
+      </div>
+      {loading ? (
+        <div className="text-sm text-[var(--text-muted)] flex items-center gap-2">
+          <Loader2 size={14} className="animate-spin" /> Suche …
+        </div>
+      ) : query.trim() && issues.length === 0 && repos.length === 0 ? (
+        <div className="text-sm text-[var(--text-muted)]">Keine Ergebnisse.</div>
+      ) : (
+        <div className="space-y-4">
+          {repos.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-[var(--text-muted)] mb-2">
+                Repositories ({repos.length})
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {repos.map((r) => (
+                  <Link
+                    key={r.id}
+                    to={`/github/repos/${r.owner?.login || r.full_name.split("/")[0]}/${r.name}`}
+                    className="card hover:border-[var(--accent)] transition"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="font-medium truncate">{r.full_name}</div>
+                      {r.private && (
+                        <span className="badge badge-muted">privat</span>
+                      )}
+                    </div>
+                    {r.description && (
+                      <div className="text-xs text-[var(--text-muted)] mt-1 line-clamp-2">
+                        {r.description}
+                      </div>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+          {issues.length > 0 && (
+            <div>
+              <h3 className="text-sm font-medium text-[var(--text-muted)] mb-2">
+                Issues & PRs ({issues.length})
+              </h3>
+              <div className="space-y-2">
+                {issues.map((i) => {
+                  const url: string = i.repository_url || "";
+                  const parts = url.split("/");
+                  const owner = parts[parts.length - 2];
+                  const repo = parts[parts.length - 1];
+                  const isPr = !!i.pull_request;
+                  const path = isPr ? "prs" : "issues";
+                  return (
+                    <Link
+                      key={i.id}
+                      to={`/github/${path}/${owner}/${repo}/${i.number}`}
+                      className="card flex items-start gap-3 hover:border-[var(--accent)] transition"
+                    >
+                      {isPr ? (
+                        <GitPullRequest
+                          size={16}
+                          className="mt-1 text-[var(--accent)]"
+                        />
+                      ) : (
+                        <CircleDot
+                          size={16}
+                          className={`mt-1 ${
+                            i.state === "open"
+                              ? "text-[var(--success)]"
+                              : "text-[var(--text-muted)]"
+                          }`}
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium truncate">{i.title}</div>
+                        <div className="text-xs text-[var(--text-muted)] mt-0.5">
+                          {owner}/{repo} · #{i.number} · {i.user?.login}
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

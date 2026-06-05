@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import { LayoutDashboard, ServerCog, Globe, Github, Terminal as TerminalIcon, Settings as SettingsIcon, Sun, Moon, Monitor } from "lucide-react";
 import { useStore } from "./state/useStore";
 import { useTheme } from "./state/useTheme";
-import Terminal from "./routes/Terminal";
 
 const tabs = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -48,8 +47,6 @@ export default function App() {
   const load = useStore((s) => s.load);
   const [theme, , , cycleTheme] = useTheme();
   const navigate = useNavigate();
-  const location = useLocation();
-  const isTerminal = location.pathname.startsWith("/terminal");
   const [readyTimer, setReadyTimer] = useState(0);
 
   useEffect(() => {
@@ -136,20 +133,8 @@ export default function App() {
             <ThemeToggleButton theme={theme} onCycle={cycleTheme} />
           </div>
         </div>
-        <div className="flex-1 min-h-0 overflow-hidden relative">
-          <div
-            className="absolute inset-0"
-            style={{ display: isTerminal ? "none" : "block" }}
-          >
-            <Outlet />
-          </div>
-          <div
-            className="absolute inset-0"
-            style={{ display: isTerminal ? "block" : "none" }}
-            aria-hidden={!isTerminal}
-          >
-            <Terminal />
-          </div>
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <Outlet />
         </div>
       </main>
     </div>
